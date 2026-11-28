@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'keranjang_page.dart';
 import 'main.dart';
+import 'pages/demo_payment.dart';
+import 'pages/invoice_page.dart';
 import 'pages/riwayat_pesanan_page.dart';
 import 'services/app_database.dart';
 
@@ -64,7 +66,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
       initialDate: _tanggalPengiriman,
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 30)),
-      helpText: _pickup ? 'Pilih tanggal pengambilan' : 'Pilih tanggal pengiriman',
+      helpText: _pickup
+          ? 'Pilih tanggal pengambilan'
+          : 'Pilih tanggal pengiriman',
     );
     if (mounted && tanggal != null) {
       setState(() => _tanggalPengiriman = tanggal);
@@ -103,7 +107,26 @@ class _CheckoutPageState extends State<CheckoutPage> {
     // Kunci checkout sampai proses simpan dan dialog selesai.
     setState(() => _sedangMenyimpan = true);
     try {
+      final simulated = await showDemoPayment(context, metodePembayaran, total);
+      if (!mounted) return;
+      if (simulated != true) {
+        setState(() => _sedangMenyimpan = false);
+        return;
+      }
+
       await cart.flush();
+      final items = cart.items
+          .map(
+            (item) => <String, Object?>{
+              'menu_name': item.menu.nama,
+              'price': item.menu.harga,
+              'quantity': item.qty,
+              'options': item.opsi,
+              'note': item.catatan,
+            },
+          )
+          .toList();
+      final createdAt = DateTime.now().toIso8601String();
       final orderId = await AppDatabase.instance.saveOrder(
         customerName: nama,
         phone: nomorHp,
@@ -113,23 +136,14 @@ class _CheckoutPageState extends State<CheckoutPage> {
         needsCutlery: perluAlatMakan,
         pickup: _pickup,
         total: total,
-        items: cart.items
-            .map(
-              (item) => {
-                'menu_name': item.menu.nama,
-                'price': item.menu.harga,
-                'quantity': item.qty,
-                'options': item.opsi,
-                'note': item.catatan,
-              },
-            )
-            .toList(),
+        items: items,
+        createdAt: createdAt,
       );
 
       // Keranjang dikosongkan setelah pesanan berhasil masuk ke SQLite.
       cart.bersihkanSetelahCheckout();
       if (!mounted) return;
-      final lihatRiwayat = await showDialog<bool>(
+      final tujuan = await showDialog<String>(
         context: context,
         barrierDismissible: false,
         builder: (dialogContext) => PopScope(
@@ -141,30 +155,40 @@ class _CheckoutPageState extends State<CheckoutPage> {
               color: Theme.of(context).colorScheme.primary,
               size: 44,
             ),
-            title: Text('Pesanan #$orderId tersimpan'),
+            title: const Text('Pesanan berhasil disimpan'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Pesanan dapat dilihat di Riwayat Pesanan.'),
+                Text('Pesanan #$orderId tersimpan.'),
                 const SizedBox(height: 12),
                 Text('Total pesanan: ${rupiah(total)}'),
-                Text('Metode tercatat: $metodePembayaran'),
-                Text('Tanggal ${_pickup ? 'pengambilan' : 'pengiriman'}: $tanggal'),
+                Text('Metode pembayaran: $metodePembayaran'),
+                Text(
+                  'Tanggal ${_pickup ? 'pengambilan' : 'pengiriman'}: $tanggal',
+                ),
                 Text(
                   'Alat makan: ${perluAlatMakan ? 'disertakan' : 'tidak perlu'}',
                 ),
                 const SizedBox(height: 12),
-                Text(_pickup ? 'Ambil sendiri di restoran' : 'Alamat pengiriman: $alamat'),
+                Text(
+                  _pickup
+                      ? 'Ambil sendiri di restoran'
+                      : 'Alamat pengiriman: $alamat',
+                ),
               ],
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
+                onPressed: () => Navigator.of(dialogContext).pop('home'),
                 child: const Text('Kembali ke beranda'),
               ),
+              OutlinedButton(
+                onPressed: () => Navigator.of(dialogContext).pop('invoice'),
+                child: const Text('Buka invoice PDF'),
+              ),
               FilledButton(
-                onPressed: () => Navigator.of(dialogContext).pop(true),
+                onPressed: () => Navigator.of(dialogContext).pop('history'),
                 child: const Text('Lihat riwayat'),
               ),
             ],
@@ -173,7 +197,25 @@ class _CheckoutPageState extends State<CheckoutPage> {
       );
       if (!mounted) return;
       final navigator = Navigator.of(context);
-      if (lihatRiwayat == true) {
+      if (tujuan == 'invoice') {
+        navigator.pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (_) => InvoicePage(
+              order: {
+                'id': orderId,
+                'created_at': createdAt,
+                'payment_method': metodePembayaran,
+                'pickup': _pickup ? 1 : 0,
+                'delivery_date': tanggal,
+                'demo_paid': 1,
+                'total': total,
+              },
+              items: items,
+            ),
+          ),
+          (route) => route.isFirst,
+        );
+      } else if (tujuan == 'history') {
         navigator.pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const RiwayatPesananPage()),
           (route) => route.isFirst,
@@ -219,7 +261,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
                       children: [
                         SwitchListTile(
                           title: const Text('Ambil sendiri'),
-                          subtitle: Text(_pickup ? 'Tanpa ongkir' : 'Diantar ke alamat penerima'),
+                          subtitle: Text(
+                            _pickup
+                                ? 'Tanpa ongkir'
+                                : 'Diantar ke alamat penerima',
+                          ),
                           value: _pickup,
                           onChanged: (value) => setState(() {
                             _pickup = value;
@@ -260,21 +306,22 @@ class _CheckoutPageState extends State<CheckoutPage> {
                           },
                         ),
                         const SizedBox(height: 12),
-                        if (!_pickup) TextFormField(
-                          controller: alamatCtrl,
-                          onChanged: _dataPengirimanBerubah,
-                          maxLines: 3,
-                          textCapitalization: TextCapitalization.sentences,
-                          decoration: const InputDecoration(
-                            labelText: 'Alamat lengkap',
-                            alignLabelWithHint: true,
-                            hintText: 'Jalan, nomor rumah, dan kota',
+                        if (!_pickup)
+                          TextFormField(
+                            controller: alamatCtrl,
+                            onChanged: _dataPengirimanBerubah,
+                            maxLines: 3,
+                            textCapitalization: TextCapitalization.sentences,
+                            decoration: const InputDecoration(
+                              labelText: 'Alamat lengkap',
+                              alignLabelWithHint: true,
+                              hintText: 'Jalan, nomor rumah, dan kota',
+                            ),
+                            validator: (value) =>
+                                (value == null || value.trim().length < 10)
+                                ? 'Alamat wajib diisi (minimal 10 karakter)'
+                                : null,
                           ),
-                          validator: (value) =>
-                              (value == null || value.trim().length < 10)
-                              ? 'Alamat wajib diisi (minimal 10 karakter)'
-                              : null,
-                        ),
                         const SizedBox(height: 12),
                         CheckboxListTile(
                           key: _konfirmasiKey,
@@ -282,7 +329,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             horizontal: 4,
                             vertical: 4,
                           ),
-                          tileColor: Theme.of(context).colorScheme.primaryContainer,
+                          tileColor: Theme.of(context)
+                              .colorScheme
+                              .primaryContainer,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -299,7 +348,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
                         if (_tampilkanPesanKonfirmasi)
                           Text(
                             'Periksa kembali data penerima, lalu centang konfirmasi.',
-                            style: TextStyle(color: Theme.of(context).colorScheme.error),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
                           ),
                       ],
                     ),
@@ -339,8 +390,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Pilihan ini hanya dicatat di perangkat.',
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        'Pilih metode untuk pesanan ini.',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       RadioGroup<int>(
@@ -357,7 +410,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                 contentPadding: EdgeInsets.zero,
                                 value: i,
                                 title: Text(metode[i].$2),
-                                secondary: Icon(metode[i].$1, color: Theme.of(context).colorScheme.primary),
+                                secondary: Icon(
+                                  metode[i].$1,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
                               ),
                           ],
                         ),
@@ -404,8 +460,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
                           : () => _simpanPesanan(total),
                       child: Text(
                         _sedangMenyimpan
-                            ? 'Menyimpan pesanan…'
-                            : 'Simpan pesanan',
+                            ? 'Memproses…'
+                            : 'Lanjut ke pembayaran',
                       ),
                     ),
                   ],
@@ -439,7 +495,11 @@ class _KartuSeksi extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(ikon, color: Theme.of(context).colorScheme.primary, size: 22),
+                  Icon(
+                    ikon,
+                    color: Theme.of(context).colorScheme.primary,
+                    size: 22,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'menu_restoran_page.dart';
+import 'pages/login_page.dart';
 import 'services/app_database.dart';
 
 const Color kBg = Color(0xFFF4F9FD);
@@ -15,7 +16,6 @@ Future<void> main() async {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
-  await cart.load();
   runApp(const SeafoodApp());
 }
 
@@ -28,6 +28,22 @@ class SeafoodApp extends StatefulWidget {
 
 class _SeafoodAppState extends State<SeafoodApp> {
   bool gelap = false;
+  bool masuk = false;
+
+  Future<void> bukaAkun(int id) async {
+    final db = AppDatabase.instance;
+    await cart.flush();
+    await cart.load(id);
+    if (!mounted) return;
+    db.userId = id;
+    setState(() => masuk = true);
+  }
+
+  void keluar() {
+    AppDatabase.instance.userId = null;
+    cart.bersihkanSetelahCheckout();
+    setState(() => masuk = false);
+  }
 
   ThemeData tema(Brightness brightness) {
     final malam = brightness == Brightness.dark;
@@ -53,10 +69,14 @@ class _SeafoodAppState extends State<SeafoodApp> {
           side: BorderSide(color: warna.outlineVariant),
         ),
       ),
-      filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(
-        minimumSize: const Size(48, 48),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      )),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size(48, 48),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      ),
       inputDecorationTheme: InputDecorationThemeData(
         filled: true,
         fillColor: warna.surfaceContainerLow,
@@ -69,12 +89,18 @@ class _SeafoodAppState extends State<SeafoodApp> {
   Widget build(BuildContext context) {
     // Satu pilihan tema berlaku untuk semua halaman selama aplikasi dibuka.
     return MaterialApp(
+      key: ValueKey(masuk),
       title: 'Seafood Order',
       debugShowCheckedModeBanner: false,
       theme: tema(Brightness.light),
       darkTheme: tema(Brightness.dark),
       themeMode: gelap ? ThemeMode.dark : ThemeMode.light,
-      home: HomePage(onGantiTema: () => setState(() => gelap = !gelap)),
+      home: masuk
+          ? HomePage(
+              onGantiTema: () => setState(() => gelap = !gelap),
+              onKeluar: keluar,
+            )
+          : LoginPage(onMasuk: bukaAkun),
     );
   }
 }
@@ -173,8 +199,8 @@ class Cart extends ChangeNotifier {
   final List<CartItem> items = [];
   Future<void> _saveQueue = Future<void>.value();
 
-  Future<void> load() async {
-    final savedItems = await AppDatabase.instance.getCartItems();
+  Future<void> load(int accountId) async {
+    final savedItems = await AppDatabase.instance.getCartItems(accountId);
     items
       ..clear()
       ..addAll(savedItems.map(CartItem.fromDatabaseMap));
@@ -183,11 +209,16 @@ class Cart extends ChangeNotifier {
 
   void _save() {
     final snapshot = items.map((item) => item.toDatabaseMap()).toList();
-    _saveQueue = _saveSnapshot(_saveQueue, snapshot);
+    _saveQueue = _saveSnapshot(
+      _saveQueue,
+      AppDatabase.instance.activeUserId,
+      snapshot,
+    );
   }
 
   Future<void> _saveSnapshot(
     Future<void> previous,
+    int accountId,
     List<Map<String, Object?>> snapshot,
   ) async {
     try {
@@ -196,7 +227,7 @@ class Cart extends ChangeNotifier {
       // Continue with the newest snapshot even if an earlier save failed.
     }
     try {
-      await AppDatabase.instance.replaceCartItems(snapshot);
+      await AppDatabase.instance.replaceCartItems(accountId, snapshot);
     } catch (error) {
       debugPrint('Gagal menyimpan keranjang: $error');
     }
@@ -207,7 +238,6 @@ class Cart extends ChangeNotifier {
   void bersihkanSetelahCheckout() {
     items.clear();
     notifyListeners();
-
   }
 
   int get jumlah => items.fold(0, (t, e) => t + e.qty);
@@ -216,7 +246,10 @@ class Cart extends ChangeNotifier {
 
   void tambah(Menu m, String opsi, String catatan, int qty) {
     for (final it in items) {
-      if (it.menu.nama == m.nama && it.menu.harga == m.harga && it.opsi == opsi && it.catatan == catatan) {
+      if (it.menu.nama == m.nama &&
+          it.menu.harga == m.harga &&
+          it.opsi == opsi &&
+          it.catatan == catatan) {
         it.qty += qty;
         _save();
         notifyListeners();
@@ -318,7 +351,9 @@ class PanelBawah extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
-        border: Border(top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant)),
+        border: Border(
+          top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+        ),
       ),
       child: SafeArea(
         top: false,
@@ -370,7 +405,9 @@ class TampilanStatus extends StatelessWidget {
               Text(
                 pesan!,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
             if (tindakan != null) ...[const SizedBox(height: 16), tindakan!],

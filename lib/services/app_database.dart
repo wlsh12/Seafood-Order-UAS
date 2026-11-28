@@ -9,6 +9,38 @@ class AppDatabase {
 
   static final AppDatabase instance = AppDatabase._();
   Database? _database;
+  int? userId;
+
+  int get activeUserId => userId ?? (throw StateError('Silakan masuk dulu.'));
+
+  static Future<void> _addAccounts(Database db) async {
+    await db.execute('''
+      CREATE TABLE users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL UNIQUE,
+        salt TEXT NOT NULL,
+        password_hash TEXT NOT NULL
+      )
+    ''');
+    // Baris lama tetap tersimpan dengan user_id NULL.
+    await db.execute(
+      'ALTER TABLE orders ADD COLUMN user_id INTEGER REFERENCES users(id)',
+    );
+    await db.execute(
+      'ALTER TABLE orders ADD COLUMN demo_paid INTEGER NOT NULL DEFAULT 0',
+    );
+    await db.execute(
+      'ALTER TABLE cart_items ADD COLUMN user_id INTEGER REFERENCES users(id)',
+    );
+    await db.execute('ALTER TABLE favorites RENAME TO legacy_favorites');
+    await db.execute('''
+      CREATE TABLE favorites (
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        menu_id TEXT NOT NULL,
+        PRIMARY KEY (user_id, menu_id)
+      )
+    ''');
+  }
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -26,7 +58,7 @@ class AppDatabase {
     }
     _database = await openDatabase(
       databasePath,
-      version: 3,
+      version: 4,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -71,12 +103,15 @@ class AppDatabase {
             FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
           )
         ''');
+        await _addAccounts(db);
       },
       // Menambah detail checkout tanpa menghapus pesanan dari versi database lama.
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 3) {
           await db.execute('CREATE TABLE favorites (menu_id TEXT PRIMARY KEY)');
-          await db.execute('ALTER TABLE orders ADD COLUMN pickup INTEGER NOT NULL DEFAULT 0');
+          await db.execute(
+            'ALTER TABLE orders ADD COLUMN pickup INTEGER NOT NULL DEFAULT 0',
+          );
         }
         if (oldVersion < 2) {
           await db.execute(
@@ -86,39 +121,64 @@ class AppDatabase {
             'ALTER TABLE orders ADD COLUMN needs_cutlery INTEGER NOT NULL DEFAULT 0',
           );
         }
+        if (oldVersion < 4) await _addAccounts(db);
       },
     );
     return _database!;
   }
 
-  Future<List<Map<String, Object?>>> getCartItems() async {
+  Future<List<Map<String, Object?>>> getCartItems(int accountId) async {
     final db = await database;
-    return db.query('cart_items', orderBy: 'id ASC');
+    return db.query(
+      'cart_items',
+      where: 'user_id = ?',
+      whereArgs: [accountId],
+      orderBy: 'id ASC',
+    );
   }
 
-  Future<void> replaceCartItems(List<Map<String, Object?>> items) async {
+  Future<void> replaceCartItems(
+    int accountId,
+    List<Map<String, Object?>> items,
+  ) async {
     final db = await database;
     await db.transaction((txn) async {
-      await txn.delete('cart_items');
+      await txn.delete(
+        'cart_items',
+        where: 'user_id = ?',
+        whereArgs: [accountId],
+      );
       for (final item in items) {
-        await txn.insert('cart_items', item);
+        await txn.insert('cart_items', {...item, 'user_id': accountId});
       }
     });
   }
 
   Future<Set<String>> getFavorites() async {
+    final accountId = activeUserId;
     final db = await database;
-    final rows = await db.query('favorites');
+    final rows = await db.query(
+      'favorites',
+      where: 'user_id = ?',
+      whereArgs: [accountId],
+    );
     return rows.map((row) => row['menu_id'] as String).toSet();
   }
 
   Future<void> setFavorite(String id, bool selected) async {
+    final accountId = activeUserId;
     final db = await database;
     if (selected) {
-      await db.insert('favorites', {'menu_id': id},
-          conflictAlgorithm: ConflictAlgorithm.ignore);
+      await db.insert('favorites', {
+        'menu_id': id,
+        'user_id': accountId,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
     } else {
-      await db.delete('favorites', where: 'menu_id = ?', whereArgs: [id]);
+      await db.delete(
+        'favorites',
+        where: 'user_id = ? AND menu_id = ?',
+        whereArgs: [accountId, id],
+      );
     }
   }
 
@@ -131,11 +191,15 @@ class AppDatabase {
     required bool needsCutlery,
     required bool pickup,
     required int total,
+    required String createdAt,
     required List<Map<String, Object?>> items,
   }) async {
+    final accountId = activeUserId;
     final db = await database;
     return db.transaction((txn) async {
       final orderId = await txn.insert('orders', {
+        'user_id': accountId,
+        'demo_paid': 1,
         'customer_name': customerName,
         'phone': phone,
         'address': address,
@@ -144,7 +208,7 @@ class AppDatabase {
         'needs_cutlery': needsCutlery ? 1 : 0,
         'pickup': pickup ? 1 : 0,
         'total': total,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': createdAt,
       });
 
       for (final item in items) {
@@ -158,14 +222,24 @@ class AppDatabase {
         });
       }
       // Jika salah satu operasi gagal, SQLite membatalkan seluruh checkout.
-      await txn.delete('cart_items');
+      await txn.delete(
+        'cart_items',
+        where: 'user_id = ?',
+        whereArgs: [accountId],
+      );
       return orderId;
     });
   }
 
   Future<List<Map<String, Object?>>> getOrders() async {
+    final accountId = activeUserId;
     final db = await database;
-    final orders = await db.query('orders', orderBy: 'id DESC');
+    final orders = await db.query(
+      'orders',
+      where: 'user_id = ?',
+      whereArgs: [accountId],
+      orderBy: 'id DESC',
+    );
     final result = <Map<String, Object?>>[];
 
     for (final order in orders) {

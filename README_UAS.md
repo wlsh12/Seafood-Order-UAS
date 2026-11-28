@@ -57,3 +57,27 @@ dimasukkan pada **Run Configuration → Additional run args**.
 
 Untuk menjalankan aplikasi dari source Android, permission internet sudah ada
 di `android/app/src/main/AndroidManifest.xml`, termasuk pada build release.
+
+## Demo akun, pembayaran, dan invoice
+
+1. Pilih **Daftar akun** dan masukkan email serta kata sandi minimal 8 karakter.
+   Akun tersimpan di perangkat ini. Gunakan menu **Akun → Keluar akun** untuk
+   berganti akun. Saat aplikasi dibuka ulang, masuk kembali.
+2. Tambahkan menu ke keranjang, buka Checkout, isi form dan centang konfirmasi.
+   Pilih **QRIS** atau **Transfer Bank**, lalu tekan **Lanjut ke pembayaran**.
+3. Periksa kode QR dan nominal. Kode QR berisi teks simulasi untuk demo UAS.
+   Tekan **Selesaikan Pembayaran** untuk menyimpan pesanan atau **Batal**
+   untuk kembali ke checkout. Jangan transfer uang.
+4. Pilih **Buka invoice PDF** dari dialog sukses atau detail pesanan di
+   Riwayat. Gunakan ikon bagikan pada pratinjau PDF untuk mengekspor file.
+
+Migrasi SQLite versi 4 mempertahankan data lama tanpa pemilik sebagai arsip
+lokal. Riwayat, keranjang, dan favorit yang terlihat setelah masuk hanya milik
+akun aktif. Arsip versi lama tidak ditampilkan di akun baru.
+
+| Bagian | File dan fungsi inti |
+| --- | --- |
+| Akun | `pages/login_page.dart` memvalidasi form. `services/local_auth.dart` membuat dan membandingkan hash PBKDF2 dengan salt acak. `main.dart` memuat keranjang akun saat login. |
+| Pembayaran | `pages/demo_payment.dart` menampilkan instruksi dan QR simulasi. `checkout_page.dart` hanya meneruskan penyimpanan setelah pengguna mengonfirmasi simulasi. |
+| SQLite | `services/app_database.dart` menyaring baris berdasarkan akun. `saveOrder()` menyimpan pesanan, item, dan pengosongan keranjang akun dalam satu transaksi. |
+| PDF | `pages/invoice_page.dart` menghasilkan invoice dari harga item, tanggal, dan total pesanan yang tersimpan. Invoice mencantumkan status pesanan dan keterangan bahwa pembayaran tidak ditagihkan. |

@@ -59,7 +59,12 @@ class BarKeranjang extends StatelessWidget {
 
 class HomePage extends StatefulWidget {
   final VoidCallback onGantiTema;
-  const HomePage({super.key, required this.onGantiTema});
+  final VoidCallback onKeluar;
+  const HomePage({
+    super.key,
+    required this.onGantiTema,
+    required this.onKeluar,
+  });
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -74,6 +79,12 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _menusFuture = _loadMenus();
+  }
+
+  @override
+  void dispose() {
+    _api.close();
+    super.dispose();
   }
 
   // Ambil data API, lalu ubah setiap record menjadi Menu.
@@ -98,13 +109,20 @@ class _HomePageState extends State<HomePage> {
     final teks = Theme.of(context).textTheme;
     return Scaffold(
       appBar: AppBar(
-        title: const FittedBox(fit: BoxFit.scaleDown, child: Text('Seafood Order')),
+        title: const FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text('Seafood Order'),
+        ),
         actions: [
           IconButton(
             tooltip: Theme.of(context).brightness == Brightness.dark
-                ? 'Pakai mode terang' : 'Pakai mode gelap',
-            icon: Icon(Theme.of(context).brightness == Brightness.dark
-                ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
+                ? 'Pakai mode terang'
+                : 'Pakai mode gelap',
+            icon: Icon(
+              Theme.of(context).brightness == Brightness.dark
+                  ? Icons.light_mode_outlined
+                  : Icons.dark_mode_outlined,
+            ),
             onPressed: widget.onGantiTema,
           ),
           IconButton(
@@ -121,7 +139,13 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           const TombolKeranjang(),
-          const SizedBox(width: 4),
+          PopupMenuButton<String>(
+            tooltip: 'Akun',
+            onSelected: (_) => widget.onKeluar(),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'keluar', child: Text('Keluar akun')),
+            ],
+          ),
         ],
       ),
       body: FutureBuilder<List<Menu>>(
@@ -165,20 +189,28 @@ class _HomePageState extends State<HomePage> {
                   alignment: Alignment.bottomLeft,
                   children: [
                     Positioned.fill(child: FotoNetwork(menus.first.foto)),
-                    const Positioned.fill(child: DecoratedBox(
-                      decoration: BoxDecoration(gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, Color(0xE6000000)],
-                      )),
-                    )),
+                    const Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Colors.transparent, Color(0xE6000000)],
+                          ),
+                        ),
+                      ),
+                    ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(18, 88, 18, 16),
-                      child: Text(menus.first.nama, maxLines: 2,
+                      child: Text(
+                        menus.first.nama,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: teks.headlineSmall?.copyWith(
-                          color: Colors.white, fontWeight: FontWeight.bold,
-                        )),
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -187,9 +219,10 @@ class _HomePageState extends State<HomePage> {
               OutlinedButton.icon(
                 icon: const Icon(Icons.favorite_border),
                 label: const Text('Menu favorit'),
-                onPressed: () => Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => FavoritPage(menus: menus),
-                )),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => FavoritPage(menus: menus)),
+                ),
               ),
               const SizedBox(height: 24),
               Text(
@@ -205,7 +238,10 @@ class _HomePageState extends State<HomePage> {
                 isExpanded: true,
                 decoration: InputDecoration(
                   labelText: 'Filter kategori',
-                  prefixIcon: Icon(Icons.filter_list, color: Theme.of(context).colorScheme.primary),
+                  prefixIcon: Icon(
+                    Icons.filter_list,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                 ),
                 items: [
                   const DropdownMenuItem(
@@ -331,12 +367,20 @@ class _KategoriCard extends StatelessWidget {
                         ),
                         Text(
                           '$jumlahMenu menu',
-                          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                            fontSize: 13,
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.primary),
+                  Icon(
+                    Icons.chevron_right,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                 ],
               ),
             ),
@@ -418,7 +462,10 @@ class _MenuTile extends StatelessWidget {
                         menu.deskripsi,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontSize: 13,
+                        ),
                       ),
                     ],
                     const SizedBox(height: 8),
@@ -432,7 +479,10 @@ class _MenuTile extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       menu.tersedia ? 'Tersedia' : 'Stok habis',
-                      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 13,
+                      ),
                     ),
                   ],
                 ),
@@ -440,7 +490,11 @@ class _MenuTile extends StatelessWidget {
               if (menu.tersedia)
                 Padding(
                   padding: EdgeInsets.only(top: 2),
-                  child: Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.primary, size: 20),
+                  child: Icon(
+                    Icons.chevron_right,
+                    color: Theme.of(context).colorScheme.primary,
+                    size: 20,
+                  ),
                 ),
             ],
           ),

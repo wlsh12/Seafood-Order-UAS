@@ -29,9 +29,11 @@ class _FavoritPageState extends State<FavoritPage> {
       await AppDatabase.instance.setFavorite(menu.id, pilih);
       if (mounted) setState(() { _favorit = AppDatabase.instance.getFavorites(); });
     } catch (_) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pilihan favorit gagal disimpan.')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Pilihan favorit gagal disimpan.')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _sibuk = false);
     }

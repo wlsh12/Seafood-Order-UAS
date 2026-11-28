@@ -31,6 +31,10 @@ dependencies:
   flutter:
     sdk: flutter
 
+  cryptography: ^2.7.0
+  pdf: ^3.11.0
+  printing: ^5.13.0
+  qr_flutter: ^4.1.0
   http: ^1.6.0
   path: ^1.9.1
   path_provider: ^2.1.6
@@ -93,3 +97,7 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+  assets:
+    - assets/fonts/OpenSans-Regular.ttf
+    - assets/fonts/OpenSans-Bold.ttf
